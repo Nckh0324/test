@@ -20,6 +20,8 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import logging
+
 if getattr(sys, 'frozen', False):
     # Đường dẫn tới thư mục chứa executable
     application_path = sys._MEIPASS
@@ -38,8 +40,9 @@ class CameraApp:
         self.known_names = []
         self.dataframe = None
         self.last_attendance_time = {}
-        self.attendance_cooldown = 3
+        self.attendance_cooldown = 5
         self.excel_data = None
+        self.selected_date = None
         
         #Đường dẫn thư mục ảnh mặc định
         self.default_faces_directory = r"D:\python\DATA"
@@ -248,260 +251,162 @@ class CameraApp:
         )
         clear_button.pack(side="left", padx=5, expand=True)
 
-    # def load_known_faces(self, directory_path):
-    #     """
-    #     Load known faces from a directory
-    #     Filename is used as the student ID/name
-    #     """
-    #     self.encoded_known_faces = []
-    #     self.known_names = []
-        
-    #     # Kiểm tra và thông báo nếu thư mục không tồn tại
-    #     if not os.path.exists(directory_path):
-    #         messagebox.showwarning("Cảnh báo", f"Thư mục {directory_path} không tồn tại.")
-    #         return
-        
-    #     # Đếm số lượng ảnh được tải thành công
-    #     successful_loads = 0
-    #     failed_loads = 0
-        
-    #     # Iterate through image files in the directory
-    #     for filename in os.listdir(directory_path):
-    #         # Support common image formats
-    #         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
-    #             try:
-    #                 # Remove file extension to get student ID/name
-    #                 student_name = os.path.splitext(filename)[0]
-                    
-    #                 # Full path to the image
-    #                 image_path = os.path.join(directory_path, filename)
-                    
-    #                 # Load image
-    #                 image = face_recognition.load_image_file(image_path)
-                    
-    #                 # Encode face
-    #                 face_encodings = face_recognition.face_encodings(image)
-                    
-    #                 # If a face is detected in the image
-    #                 if face_encodings:
-    #                     self.encoded_known_faces.append(face_encodings[0])
-    #                     self.known_names.append(student_name)
-    #                     successful_loads += 1
-    #                 else:
-    #                     failed_loads += 1
-    #                     print(f"Không phát hiện khuôn mặt trong {filename}")
-                
-    #             except Exception as e:
-    #                 failed_loads += 1
-    #                 print(f"Lỗi xử lý {filename}: {e}")
-        
-    #     # Thông báo kết quả tải
-    #     if successful_loads > 0:
-    #         messagebox.showinfo("Thành công", 
-    #                             f"Đã tải {successful_loads} khuôn mặt.\n"
-    #                             f"Số ảnh không thành công: {failed_loads}")
-    #     else:
-    #         messagebox.showwarning("Cảnh báo", 
-    #                                 f"Không tải được ảnh nào từ thư mục {directory_path}.\n"
-    #                                 "Vui lòng kiểm tra lại thư mục.")
+    def load_known_faces(self, directory_path):
+        """
+        Load known faces from a directory
+        Filename is used as the student ID
+        """
+        self.encoded_known_faces = []
+        self.known_names = []
+        student_IDs = []  # Danh sách để lưu student_ID
 
-    # def mark_attendance(self, name):
-    #     # Kiểm tra điều kiện ban đầu
-    #     if not self.excel_file:
-    #         return
-        
-    #     # Nếu chưa chọn ngày, sử dụng ngày hiện tại
-    #     if not self.selected_date:
-    #         self.selected_date = datetime.now().strftime("%Y-%m-%d")
+        # Check if directory exists
+        if not os.path.exists(directory_path):
+            messagebox.showwarning("Cảnh báo", f"Thư mục {directory_path} không tồn tại.")
+            return []
 
-    #     try:
-    #         # Mở workbook Excel
-    #         workbook = openpyxl.load_workbook(self.excel_file)
-    #         sheet = workbook.active
+        # Initialize successful_loads and failed_loads *before* the loop
+        successful_loads = 0
+        failed_loads = 0
 
-    #         # Tìm cột cho ngày điểm danh
-    #         column_letter = None
-    #         for col in range(1, sheet.max_column + 1):
-    #             cell_value = sheet.cell(row=1, column=col).value
-    #             if cell_value == self.selected_date:
-    #                 column_letter = col
-    #                 break
+        # Sort files to ensure consistent order
+        files = sorted(os.listdir(directory_path))
 
-    #         # Nếu chưa có cột cho ngày, tạo cột mới
-    #         if column_letter is None:
-    #             column_letter = sheet.max_column + 1
-    #             sheet.cell(row=1, column=column_letter).value = self.selected_date
-    #             print(f"Thêm cột mới cho ngày: {self.selected_date}")
+        for filename in files:
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Added .jpeg support
+                try:
+                    student_ID = os.path.splitext(filename)[0]  # Lấy student_ID từ tên file
+                    print(f"Processing file: {filename}, Extracted student ID: {student_ID}")  # Debug print
+                    image_path = os.path.join(directory_path, filename)
 
-    #         # Lấy thời gian điểm danh
-    #         now = datetime.now()
-    #         datetime_string = now.strftime("%H:%M:%S")
+                    # Use face_recognition to load the image directly
+                    image = face_recognition.load_image_file(image_path)
 
-    #         # Biến để theo dõi trạng thái điểm danh
-    #         updated = False
-    #         already_marked = False
-    #         student_info = None
+                    face_encodings = face_recognition.face_encodings(image)
+                    if face_encodings:
+                        self.encoded_known_faces.append(face_encodings[0])
+                        self.known_names.append(student_ID)
+                        student_IDs.append(student_ID)  # Thêm student_ID vào danh sách
+                        successful_loads += 1
+                    else:
+                        failed_loads += 1
+                        print(f"Không phát hiện khuôn mặt trong {filename}")
 
-    #         # Duyệt qua các dòng để tìm học sinh
-    #         for row in sheet.iter_rows(min_row=2, max_col=column_letter):
-    #             # So sánh tên (cột thứ 2, giả sử)
-    #             cell_name = row[1].value if row[1] else None
-                
-    #             # So sánh tên không phân biệt chữ hoa chữ thường và loại bỏ khoảng trắng
-    #             if cell_name and cell_name.strip().lower() == name.strip().lower():
-    #                 # Kiểm tra xem đã điểm danh chưa
-    #                 if row[column_letter-1].value:
-    #                     already_marked = True
-    #                     student_info = (row[0].value, cell_name)  # Mã số, tên
-    #                     break
-    #                 else:
-    #                     # Điểm danh
-    #                     sheet.cell(row=row[0].row, column=column_letter).value = f"Đã điểm danh - {datetime_string}"
-    #                     updated = True
-    #                     student_info = (row[0].value, cell_name)  # Mã số, tên
-    #                     break
+                except Exception as e:
+                    failed_loads += 1
+                    print(f"Lỗi xử lý {filename}: {e}")
+        if successful_loads > 0:
+            messagebox.showinfo("Thành công",
+                                f"Đã tải {successful_loads} khuôn mặt.\n"
+                                f"Số ảnh không thành công: {failed_loads}")
+        else:
+            messagebox.showwarning("Cảnh báo",
+                                    f"Không tải được ảnh nào từ thư mục {directory_path}.\n"
+                                    "Vui lòng kiểm tra lại thư mục.")
 
-    #         # Xử lý kết quả điểm danh
-    #         if already_marked:
-    #             self.textEdit_missingStudents.setText(
-    #                 f"Học sinh {student_info[1]} (Mã: {student_info[0]}) "
-    #                 f"đã điểm danh vào ngày {self.selected_date}."
-    #             )
-    #         elif updated:
-    #             # Thành công điểm danh
-    #             self.textEdit_missingStudents.setText(
-    #                 f"Điểm danh thành công:\n"
-    #                 f"Mã: {student_info[0]}\n"
-    #                 f"Tên: {student_info[1]}\n"
-    #                 f"Ngày: {self.selected_date}\n"
-    #                 f"Giờ: {datetime_string}"
-    #             )
-    #         else:
-    #             # Không tìm thấy học sinh
-    #             self.textEdit_missingStudents.setText(
-    #                 f"Học sinh {name} không có trong danh sách lớp này."
-    #             )
+        print("Final student_IDs:", student_IDs)
+        return student_IDs  # Trả về danh sách student_ID
 
-    #         # Lưu workbook
-    #         workbook.save(self.excel_file)
-    #         workbook.close()
-
-    #     except Exception as e:
-    #         print(f"Lỗi trong quá trình ghi vào Excel: {e}")
-
-    def load_known_faces(self, directory):
-        for filename in os.listdir(directory):
-            if filename.endswith((".jpg", ".jpeg", ".png")):
-                image_path = os.path.join(directory, filename)
-                image = face_recognition.load_image_file(image_path)
-                encoding = face_recognition.face_encodings(image)[0]
-                name = os.path.splitext(filename)[0]
-                
-                self.encoded_known_faces.append(encoding)
-                self.known_names.append(name)
-
-    def start_camera(self):
-        self.video_capture = cv2.VideoCapture(0)
-        self.update_camera_frame()
-
-    def update_camera_frame(self):
-        ret, frame = self.video_capture.read()
-        if not ret:
-            messagebox.showerror("Lỗi", "Không thể đọc khung hình từ webcam")
-            return
-
-        # Resize frame for faster processing
-        small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-        rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-
-        # Find faces
-        current_face_locations = face_recognition.face_locations(rgb_small_frame)
-        current_face_encodings = face_recognition.face_encodings(rgb_small_frame, current_face_locations)
-
-        # Process each detected face
-        for face_encoding, face_location in zip(current_face_encodings, current_face_locations):
-            # Compare face with known faces
-            matches = face_recognition.compare_faces(self.encoded_known_faces, face_encoding)
-            face_distances = face_recognition.face_distance(self.encoded_known_faces, face_encoding)
-            
-            # Find best match
-            best_match_index = np.argmin(face_distances)
-            if face_distances[best_match_index] < 0.50:
-                name = self.known_names[best_match_index].lower()
-                self.mark_attendance(name)
-            else:
-                name = "Unknown"
-
-            # Draw rectangle and name
-            top, right, bottom, left = face_location
-            top, right, bottom, left = top * 2, right * 2, bottom * 2, left * 2
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-            cv2.putText(frame, name, (left + 6, bottom - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
-
-        # Convert to RGB for Tkinter
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        photo = tk.PhotoImage(data=cv2.imencode('.png', frame_rgb)[1].tobytes())
-        self.camera_label.configure(image=photo)
-        self.camera_label.image = photo
-
-        # Schedule next update
-        self.window.after(10, self.update_camera_frame)
-
-    def mark_attendance(self, name):
-        if not self.excel_file:
-            messagebox.showwarning("Lỗi", "Chưa chọn file Excel.")
+    def mark_attendance(self, student_IDs):
+        # Kiểm tra điều kiện ban đầu
+        if not hasattr(self, 'excel_file') or not self.excel_file:
+            messagebox.showwarning("Lỗi", "Chưa chọn file Excel")
             return
         
-        if not self.selected_date:
-            messagebox.showwarning("Lỗi", "Chưa chọn ngày điểm danh.")
-            return
-
+        # Đảm bảo có ngày được chọn
+        if not hasattr(self, 'selected_date') or not self.selected_date:
+            self.selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
+        
         try:
+            # Sử dụng openpyxl để thao tác file Excel
             workbook = openpyxl.load_workbook(self.excel_file)
             sheet = workbook.active
-            column_letter = None
 
-            # Tìm cột tương ứng với ngày
+            # Tìm hoặc tạo cột cho ngày điểm danh
+            column_letter = None
             for col in range(1, sheet.max_column + 1):
                 cell_value = sheet.cell(row=1, column=col).value
                 if cell_value == self.selected_date:
                     column_letter = col
                     break
-
-            # Nếu không tìm thấy cột, tạo cột mới
+            
+            # Nếu chưa có cột cho ngày này, tạo cột mới
             if column_letter is None:
                 column_letter = sheet.max_column + 1
-                sheet.cell(row=1, column=column_letter).value = self.selected_date
+                sheet.cell(row=1, column=column_letter, value=self.selected_date)
 
-            # Ghi thời gian điểm danh
+            # Lấy thời gian điểm danh hiện tại
             now = datetime.now()
             datetime_string = now.strftime("%H:%M:%S")
-            updated = False
-            already_marked = False
 
-            # Kiểm tra và cập nhật điểm danh
-            for row in sheet.iter_rows(min_row=2, max_col=column_letter):
-                cell_name = row[0].value
-                if cell_name and cell_name.strip().lower() == name.strip().lower():
-                    if row[column_letter-1].value:
-                        already_marked = True
-                        break
-                    else:
-                        sheet.cell(row=row[0].row, column=column_letter).value = f"Đã điểm danh - {datetime_string}"
-                        updated = True
-                        break
+            # Biến lưu kết quả
+            newly_marked_ids = []
+            missing_ids = []
+            already_marked_ids = []
 
-            # Cập nhật thông báo
-            if already_marked:
-                self.attendance_text.insert(tk.END, f"Học sinh {name} đã điểm danh vào ngày {self.selected_date}.\n")
-            elif not updated:
-                self.attendance_text.insert(tk.END, f"Học sinh {name} không có trong danh sách lớp này.\n")
+            # Đảm bảo student_IDs là list
+            if not isinstance(student_IDs, list):
+                student_IDs = [student_IDs]
 
+            # Chuyển đổi sang string và loại bỏ khoảng trắng
+            student_IDs = [str(sid).strip() for sid in student_IDs]
+            
+            # Debug log
+            print(f"Attempting to mark attendance for: {student_IDs}")
+
+            # Duyệt qua từng mã sinh viên
+            for student_ID_str in student_IDs:
+                updated = False
+                
+                # Duyệt qua các hàng để tìm sinh viên
+                for row in range(2, sheet.max_row + 1):  # Bắt đầu từ hàng 2
+                    cell_name = sheet.cell(row=row, column=1).value
+                    
+                    # So sánh mã sinh viên
+                    if cell_name and str(cell_name).strip().lower() == student_ID_str.strip().lower():
+                        # Kiểm tra ô điểm danh
+                        attendance_cell = sheet.cell(row=row, column=column_letter)
+                        
+                        if attendance_cell.value:  # Đã điểm danh
+                            already_marked_ids.append(student_ID_str)
+                            break
+                        else:
+                            # Điểm danh
+                            attendance_cell.value = f"Đã điểm danh - {datetime_string}"
+                            newly_marked_ids.append(student_ID_str)
+                            updated = True
+                            break
+                
+                # Nếu không tìm thấy sinh viên
+                if not updated:
+                    missing_ids.append(student_ID_str)
+
+            # Tạo báo cáo kết quả
+            report = []
+            if newly_marked_ids:
+                report.append(f"Điểm danh thành công:\n{', '.join(newly_marked_ids)}")
+                # Thông báo popup
+                messagebox.showinfo("Điểm Danh", "\n".join(newly_marked_ids))
+            if already_marked_ids:
+                report.append(f"Đã điểm danh trước đó:\n{', '.join(already_marked_ids)}")
+            if missing_ids:
+                report.append(f"Không tìm thấy trong danh sách lớp:\n{', '.join(missing_ids)}")
+
+            # In báo cáo ra console
+            if report:
+                print("\n".join(report))
+
+            # Lưu file Excel
             workbook.save(self.excel_file)
             workbook.close()
-
+            print("Cập nhật file Excel thành công.")
+            
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Lỗi trong quá trình ghi vào Excel: {e}")
+            messagebox.showerror("Lỗi", f"Lỗi trong quá trình xử lý file Excel: {str(e)}")
+            print(f"Lỗi chi tiết: {e}")
+            import traceback
+            traceback.print_exc()
+
 
 
     def toggle_camera(self):
@@ -565,7 +470,7 @@ class CameraApp:
                                             self.mark_attendance(name)
                                             self.last_attendance_time[name] = current_time
                                             # Print confirmation message
-                                            print(f"Marked attendance for {name} at {current_time}")
+                                            print(f"Đã điểm danh cho {name} vào lúc {current_time}")
                                     else:
                                         name = "Unknown"
                                 else:
@@ -582,7 +487,7 @@ class CameraApp:
                                 color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
                                 cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
                                 cv2.putText(frame, name, (left + 6, bottom - 6),
-                                          cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 1)
+                                cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 1)
 
                 except Exception as e:
                     print(f"Error in face recognition: {e}")
@@ -605,7 +510,7 @@ class CameraApp:
         if filepath:
             self.excel_file = filepath
             self.excel_entry.delete(0, "end")
-            self.excel_entry.insert(0, os.path.basename(filepath))         
+            # self.excel_entry.insert(0, os.path.basename(filepath))         
             
     def display_excel_data(self):
         if not self.excel_file:
@@ -632,34 +537,6 @@ class CameraApp:
                 self.tree.insert("", tk.END, values=values)
         except Exception as e:
             messagebox.showerror("Lỗi", f"Lỗi khi tải file Excel: {str(e)}")
-
-    def mark_attendance(self, name):
-        if self.dataframe is None:
-            messagebox.showwarning("Lỗi", "Vui lòng chọn file Excel trước.")
-            return
-
-        try:
-            selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
-
-            # Thêm cột ngày nếu chưa tồn tại
-            if selected_date not in self.dataframe.columns:
-                self.dataframe[selected_date] = np.nan
-
-            # Tìm và điểm danh
-            name_column = self.dataframe.columns[1]  # Giả sử cột tên ở vị trí thứ 2
-            mask = self.dataframe[name_column] == name
-            
-            if mask.any():
-                self.dataframe.loc[mask, selected_date] = "Có mặt"
-                
-                # Lưu lại file Excel
-                self.dataframe.to_excel(self.excel_file, index=False)
-                messagebox.showinfo("Thành công", f"Đã điểm danh cho {name}.")
-            else:
-                messagebox.showwarning("Lỗi", f"Không tìm thấy học sinh tên {name}.")
-        
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Lỗi khi điểm danh: {str(e)}")
 
     def show_unmarked(self):
         if self.dataframe is None:
