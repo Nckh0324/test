@@ -4,7 +4,7 @@ import face_recognition
 import os
 import numpy as np
 from datetime import datetime
-import openpyxl 
+import openpyxl
 #GUI
 import customtkinter as ctk
 import tkinter as tk
@@ -36,6 +36,7 @@ class CameraApp:
         self.window.resizable(False, False)
 
         self.video_capture = None
+        self.images = []  # Thêm dòng này để khởi tạo self.images
         self.encoded_known_faces = []
         self.known_names = []
         self.dataframe = None
@@ -43,12 +44,14 @@ class CameraApp:
         self.attendance_cooldown = 5
         self.excel_data = None
         self.selected_date = None
+        self.excel_file = None # Khởi tạo biến excel_file
         
-        #Đường dẫn thư mục ảnh mặc định
-        self.default_faces_directory = r"D:\python\DATA"
+        # Đường dẫn thư mục ảnh mặc định
+        self.default_faces_directory = r"D:\python\DATA" # Thay đổi đường dẫn nếu cần
         
-        #Tự động tải ảnh khuôn mặt khi khởi động
-        self.load_known_faces(self.default_faces_directory)
+        # Tự động tải ảnh khuôn mặt khi khởi động
+        self.load_images(self.default_faces_directory)
+        self.encode_faces()
         
         # Set custom appearance
         ctk.set_appearance_mode("light")
@@ -56,9 +59,6 @@ class CameraApp:
         
         # Create GUI
         self.create_gui()
-        
-        # Start update loop
-        self.update_loop()
 
             
     def create_gui(self):
@@ -86,13 +86,9 @@ class CameraApp:
         camera_label.pack(pady=10)
 
         # Camera Canvas
-        self.camera_canvas = ctk.CTkCanvas(
-            camera_section,
-            width=640,
-            height=480,
-            bg="lightgray"
-        )
-        self.camera_canvas.pack(padx=10, pady=10)
+        self.label_camera = ctk.CTkLabel(camera_section, text="", width=640, height=480)
+        self.label_camera.pack(padx=10, pady=10)
+        
 
         # Camera controls
         camera_controls = ctk.CTkFrame(camera_section)
@@ -101,16 +97,16 @@ class CameraApp:
         id_label = ctk.CTkLabel(camera_controls, text="ID")
         id_label.pack(side="left", padx=5)
 
-        self.id_entry = ctk.CTkEntry(camera_controls, width=100)
-        self.id_entry.pack(side="left", padx=5)
+        self.camera_id = ctk.CTkEntry(camera_controls, width=100)
+        self.camera_id.pack(side="left", padx=5)
 
-        self.camera_button = ctk.CTkButton(
+        self.btn_start_stop = ctk.CTkButton(
             camera_controls,
             text="Bật Camera",
             command=self.toggle_camera,
             width=120
         )
-        self.camera_button.pack(side="left", padx=5)
+        self.btn_start_stop.pack(side="left", padx=5)
 
         # Right section
         right_section = ctk.CTkFrame(content_frame)
@@ -122,7 +118,7 @@ class CameraApp:
 
         excel_label = ctk.CTkLabel(
             excel_frame,
-            text="File Excel đã chọn",
+            text="Chọn File excel để điểm danh",
             font=("Helvetica", 14)
         )
         excel_label.pack(pady=5)
@@ -189,8 +185,9 @@ class CameraApp:
         date_button = ctk.CTkButton(
             date_controls,
             text="Chọn ngày",
+            command=self.get_selected_date,
             width=120
-        )
+            )
         date_button.pack(side="left", padx=5)
 
         # Create Treeview frame
@@ -251,61 +248,105 @@ class CameraApp:
         )
         clear_button.pack(side="left", padx=5, expand=True)
 
-    def load_known_faces(self, directory_path):
-        """
-        Load known faces from a directory
-        Filename is used as the student ID
-        """
-        self.encoded_known_faces = []
+    def get_selected_date(self):
+        self.selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
+        print(f"Đã chọn ngày: {self.selected_date}")
+
+    def load_images(self, image_directory):
+        # Reset danh sách ảnh
+        self.images = []
         self.known_names = []
-        student_IDs = []  # Danh sách để lưu student_ID
+        
+        # Kiểm tra thư mục tồn tại
+        if not os.path.exists(image_directory):
+            messagebox.showerror("Lỗi", f"Thư mục {image_directory} không tồn tại")
+            return
+        
+        # Đọc danh sách ảnh
+        image_list = os.listdir(image_directory)
+        for image_file in image_list:
+            current_image = cv2.imread(os.path.join(image_directory, image_file))
+            if current_image is not None:
+                self.images.append(current_image)
+                self.known_names.append(os.path.splitext(image_file)[0])
+    
+    def encode_faces(self):
+        # Reset danh sách mã hóa khuôn mặt
+        self.encoded_known_faces = []
+        
+        for img in self.images:
+            rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            encodings = face_recognition.face_encodings(rgb_image)
+            if encodings:
+                self.encoded_known_faces.append(encodings[0])
+    
+    def toggle_camera(self):
+        if not self.excel_file:
+            messagebox.showwarning("Lỗi", "Chưa chọn file Excel.")
+            return 
+        
+        camera_index = self.camera_id.get().strip()
+        
+        try: 
+            camera_index = int(camera_index)
+        except ValueError: 
+            messagebox.showwarning("Lỗi", "Giá trị ID không hợp lệ")
+            return
 
-        # Check if directory exists
-        if not os.path.exists(directory_path):
-            messagebox.showwarning("Cảnh báo", f"Thư mục {directory_path} không tồn tại.")
-            return []
+        if self.video_capture is None: 
+            self.video_capture = cv2.VideoCapture(camera_index) 
+            if not self.video_capture.isOpened():
+                messagebox.showerror("Lỗi", "Không thể mở camera")
+                return
+            
+            self.btn_start_stop.configure(text="Tắt Camera")
+            self.update_frame()
+        else: 
+            if hasattr(self, 'after_id'):
+                self.window.after_cancel(self.after_id)
+            
+            self.video_capture.release()
+            self.label_camera.configure(image='')
+            self.video_capture = None 
+            self.btn_start_stop.configure(text="Bật Camera")
+    
+    def update_frame(self):
+        ret, frame = self.video_capture.read()
+        if not ret:
+            messagebox.showerror("Lỗi", "Không thể đọc khung hình từ webcam")
+            return
 
-        # Initialize successful_loads and failed_loads *before* the loop
-        successful_loads = 0
-        failed_loads = 0
+        small_frame = cv2.resize(frame, (0, 0), None, fx=0.5, fy=0.5)
+        rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
 
-        # Sort files to ensure consistent order
-        files = sorted(os.listdir(directory_path))
+        current_face_locations = face_recognition.face_locations(rgb_small_frame)
+        current_face_encodings = face_recognition.face_encodings(rgb_small_frame, current_face_locations)
 
-        for filename in files:
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):  # Added .jpeg support
-                try:
-                    student_ID = os.path.splitext(filename)[0]  # Lấy student_ID từ tên file
-                    print(f"Processing file: {filename}, Extracted student ID: {student_ID}")  # Debug print
-                    image_path = os.path.join(directory_path, filename)
+        for face_encoding, face_location in zip(current_face_encodings, current_face_locations):
+            matches = face_recognition.compare_faces(self.encoded_known_faces, face_encoding)
+            face_distances = face_recognition.face_distance(self.encoded_known_faces, face_encoding)
+            best_match_index = np.argmin(face_distances)
 
-                    # Use face_recognition to load the image directly
-                    image = face_recognition.load_image_file(image_path)
+            if face_distances[best_match_index] < 0.50:
+                name = self.known_names[best_match_index].lower()
+                self.mark_attendance([name]) # Chú ý: truyền list [name] thay vì name
+            else:
+                name = "Unknown"
 
-                    face_encodings = face_recognition.face_encodings(image)
-                    if face_encodings:
-                        self.encoded_known_faces.append(face_encodings[0])
-                        self.known_names.append(student_ID)
-                        student_IDs.append(student_ID)  # Thêm student_ID vào danh sách
-                        successful_loads += 1
-                    else:
-                        failed_loads += 1
-                        print(f"Không phát hiện khuôn mặt trong {filename}")
+            top, right, bottom, left = face_location
+            top, right, bottom, left = top * 2, right * 2, bottom * 2, left * 2
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+            cv2.putText(frame, name, (left + 6, bottom - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
 
-                except Exception as e:
-                    failed_loads += 1
-                    print(f"Lỗi xử lý {filename}: {e}")
-        if successful_loads > 0:
-            messagebox.showinfo("Thành công",
-                                f"Đã tải {successful_loads} khuôn mặt.\n"
-                                f"Số ảnh không thành công: {failed_loads}")
-        else:
-            messagebox.showwarning("Cảnh báo",
-                                    f"Không tải được ảnh nào từ thư mục {directory_path}.\n"
-                                    "Vui lòng kiểm tra lại thư mục.")
-
-        print("Final student_IDs:", student_IDs)
-        return student_IDs  # Trả về danh sách student_ID
+        # Chuyển đổi frame sang định dạng ảnh cho Tkinter
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(frame)
+        imgtk = ImageTk.PhotoImage(image=img)
+        self.label_camera.configure(image=imgtk)
+        self.label_camera.image = imgtk  # Giữ tham chiếu
+        
+        # Lên lịch update frame tiếp theo
+        self.after_id = self.window.after(20, self.update_frame)
 
     def mark_attendance(self, student_IDs):
         # Kiểm tra điều kiện ban đầu
@@ -318,18 +359,16 @@ class CameraApp:
             self.selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
         
         try:
-            # Sử dụng openpyxl để thao tác file Excel
             workbook = openpyxl.load_workbook(self.excel_file)
             sheet = workbook.active
 
-            # Tìm hoặc tạo cột cho ngày điểm danh
             column_letter = None
             for col in range(1, sheet.max_column + 1):
                 cell_value = sheet.cell(row=1, column=col).value
                 if cell_value == self.selected_date:
                     column_letter = col
                     break
-            
+
             # Nếu chưa có cột cho ngày này, tạo cột mới
             if column_letter is None:
                 column_letter = sheet.max_column + 1
@@ -407,109 +446,12 @@ class CameraApp:
             import traceback
             traceback.print_exc()
 
-
-    def toggle_camera(self):
-        if hasattr(self, 'id_entry') and self.id_entry:
-            camera_index = self.id_entry.get().strip()
-            
-            if not camera_index:
-                tk.messagebox.showwarning("Lỗi", "Vui lòng nhập ID Camera.")
-                return
-                
-            try:
-                camera_index = int(camera_index)
-            except ValueError:
-                tk.messagebox.showwarning("Lỗi", "Giá trị ID không hợp lệ.")
-                return
-                
-            if self.video_capture is None:
-                self.video_capture = cv2.VideoCapture(camera_index)
-                if not self.video_capture.isOpened():
-                    tk.messagebox.showerror("Lỗi", "Không thể mở camera")
-                    return
-                self.camera_button.configure(text="Tắt Camera")
-            else:
-                self.video_capture.release()
-                self.video_capture = None
-                self.camera_canvas.delete("all")
-                self.camera_button.configure(text="Bật Camera")
-        else:
-            tk.messagebox.showwarning("Lỗi", "Không tìm thấy đối tượng ID Camera.")
-
-    def update_loop(self):
-        """Main camera update loop"""
-        if self.video_capture is not None and self.video_capture.isOpened():
-            ret, frame = self.video_capture.read()
-            if ret:
-                try:
-                    # Resize frame for faster processing
-                    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-                    rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-                    
-                    # Process face recognition
-                    face_locations = face_recognition.face_locations(rgb_small_frame)
-                    if face_locations:
-                        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
-                        
-                        for face_encoding, face_location in zip(face_encodings, face_locations):
-                            if len(self.encoded_known_faces) > 0:
-                                matches = face_recognition.compare_faces(self.encoded_known_faces, face_encoding, tolerance=0.6)
-                                face_distances = face_recognition.face_distance(self.encoded_known_faces, face_encoding)
-                                
-                                if len(face_distances) > 0:
-                                    best_match_index = np.argmin(face_distances)
-                                    if matches[best_match_index]:
-                                        name = self.known_names[best_match_index]
-                                        
-                                        # Check if enough time has passed since last attendance
-                                        current_time = datetime.now()
-                                        if (name not in self.last_attendance_time or 
-                                            (current_time - self.last_attendance_time[name]).total_seconds() > self.attendance_cooldown):
-                                            
-                                            self.mark_attendance(name)
-                                            self.last_attendance_time[name] = current_time
-                                            # Print confirmation message
-                                            print(f"Đã điểm danh cho {name} vào lúc {current_time}")
-                                    else:
-                                        name = "Unknown"
-                                else:
-                                    name = "Unknown"
-                                    
-                                # Scale back face locations for display
-                                top, right, bottom, left = face_location
-                                top *= 4
-                                right *= 4
-                                bottom *= 4
-                                left *= 4
-                                
-                                # Draw face box and name
-                                color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-                                cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
-                                cv2.putText(frame, name, (left + 6, bottom - 6),
-                                cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 1)
-
-                except Exception as e:
-                    print(f"Error in face recognition: {e}")
-
-                # Update display
-                try:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    frame_pil = Image.fromarray(frame_rgb)
-                    frame_tk = ImageTk.PhotoImage(image=frame_pil)
-                    
-                    self.camera_canvas.create_image(0, 0, anchor="nw", image=frame_tk)
-                    self.camera_canvas.image = frame_tk
-                except Exception as e:
-                    print(f"Error updating display: {e}")
-
-        self.window.after(20, self.update_loop)
-
     def select_excel_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
         if filepath:
             self.excel_file = filepath
             self.excel_entry.delete(0, "end")
-            # self.excel_entry.insert(0, os.path.basename(filepath))         
+            self.excel_entry.insert(0, os.path.basename(filepath))         
             
     def display_excel_data(self):
         if not self.excel_file:
@@ -543,13 +485,13 @@ class CameraApp:
             return
 
         try:
-            selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
+            self.selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
             
-            if selected_date not in self.dataframe.columns:
+            if self.selected_date not in self.dataframe.columns:
                 messagebox.showerror("Lỗi", "Ngày được chọn chưa tồn tại trong dữ liệu.")
                 return
 
-            unmarked_students = self.dataframe[pd.isna(self.dataframe[selected_date])]
+            unmarked_students = self.dataframe[pd.isna(self.dataframe[self.selected_date])]
             self.update_treeview(unmarked_students)
         
         except Exception as e:
@@ -561,13 +503,13 @@ class CameraApp:
             return
 
         try:
-            selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
+            self.selected_date = self.date_entry.get_date().strftime("%d/%m/%Y")
             
-            if selected_date not in self.dataframe.columns:
+            if self.selected_date not in self.dataframe.columns:
                 messagebox.showerror("Lỗi", "Ngày được chọn chưa tồn tại trong dữ liệu.")
                 return
 
-            marked_students = self.dataframe[self.dataframe[selected_date] == "Có mặt"]
+            marked_students = self.dataframe[pd.notna(self.dataframe[self.selected_date])]
             self.update_treeview(marked_students)
         
         except Exception as e:
