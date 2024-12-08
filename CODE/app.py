@@ -408,7 +408,6 @@ class CameraApp:
             traceback.print_exc()
 
 
-
     def toggle_camera(self):
         if hasattr(self, 'id_entry') and self.id_entry:
             camera_index = self.id_entry.get().strip()
