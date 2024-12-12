@@ -23,7 +23,7 @@ from email.mime.text import MIMEText
 import logging
 
 if getattr(sys, 'frozen', False):
-    # Đường dẫn tới thư mục chứa executable
+# Đường dẫn tới thư mục chứa executable
     application_path = sys._MEIPASS
 else:
     application_path = os.path.dirname(os.path.abspath(__file__))
@@ -32,8 +32,8 @@ class CameraApp:
     def __init__(self):
         self.window = ctk.CTk()
         self.window.title("HỆ THỐNG ĐIỂM DANH THÔNG QUA CAMERA")
-        self.window.geometry("1500x850")
-        self.window.resizable(False, False)
+        self.window.geometry("1280x800")
+        self.window.resizable(True, True)
 
         self.video_capture = None
         self.images = []  # Thêm dòng này để khởi tạo self.images
@@ -46,10 +46,9 @@ class CameraApp:
         self.selected_date = None
         self.excel_file = None # Khởi tạo biến excel_file
         
-        # Đường dẫn thư mục ảnh mặc định
-        self.default_faces_directory = r"D:\python\DATA" # Thay đổi đường dẫn nếu cần
-        
-        # Tự động tải ảnh khuôn mặt khi khởi động
+
+        self.default_faces_directory = r"D:\python\DATA"
+
         self.load_images(self.default_faces_directory)
         self.encode_faces()
         
@@ -60,13 +59,12 @@ class CameraApp:
         # Create GUI
         self.create_gui()
 
-            
     def create_gui(self):
         # Title Label with large font
         title_label = ctk.CTkLabel(
-            self.window,
-            text="HỆ THỐNG ĐIỂM DANH THÔNG QUA CAMERA",
-            font=("Helvetica", 24, "bold")
+        self.window,
+        text="HỆ THỐNG ĐIỂM DANH THÔNG QUA CAMERA",
+        font=("Helvetica", 24, "bold")
         )
         title_label.pack(pady=20)
 
@@ -83,12 +81,11 @@ class CameraApp:
             text="Hệ thống CAMERA",
             font=("Helvetica", 16, "bold")
         )
-        camera_label.pack(pady=10)
+        camera_label.pack(pady=40)
 
         # Camera Canvas
-        self.label_camera = ctk.CTkLabel(camera_section, text="", width=640, height=480)
+        self.label_camera = ctk.CTkLabel(camera_section, text="", width=540, height=480)
         self.label_camera.pack(padx=10, pady=10)
-        
 
         # Camera controls
         camera_controls = ctk.CTkFrame(camera_section)
@@ -148,7 +145,7 @@ class CameraApp:
             width=120
         )
         display_excel_button.pack(side="left", padx=5)
-        
+
         # button send email to parents
         send_email_button = ctk.CTkButton(
             excel_controls,
@@ -211,14 +208,14 @@ class CameraApp:
         # Style configuration for Treeview
         style = ttk.Style()
         style.configure("Treeview",
-                       background="white",
-                       foreground="black",
-                       rowheight=25,
-                       fieldbackground="white")
+                    background="white",
+                    foreground="black",
+                    rowheight=25,
+                    fieldbackground="white")
         style.configure("Treeview.Heading",
-                       background="lightgray",
-                       foreground="black",
-                       relief="raised")
+                    background="lightgray",
+                    foreground="black",
+                    relief="raised")
 
         # Buttons frame
         buttons_frame = ctk.CTkFrame(right_section)
